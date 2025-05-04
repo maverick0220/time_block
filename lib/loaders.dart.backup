@@ -1,0 +1,222 @@
+import 'dart:io';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+// import 'package:flutter/material.dart';
+import 'package:time_block/dataStructure.dart';
+
+class ConfigLoader extends ChangeNotifier {
+    List<EventInfo> eventInfos = [];
+    // Map<String, dynamic> jsonData = {};
+
+    ConfigLoader() {
+        File file = File('lib/config.json');
+        print("== file: ${file.path}");
+        loadFileAsJson(file);
+    }
+
+    Future<void> loadFileAsJson(File file) async {
+        // Map<String, dynamic> jsonData = {};
+        eventInfos.clear();
+        String contents = await file.readAsString();
+        Map<String, dynamic> jsonData = json.decode(contents);
+        for(var info in jsonData["eventInfo"].toList()){
+            // print("== loadFileAsJson_config, ${info}");
+            try{
+                // print("== loadFileAsJson_config, ${info[0].runtimeType},  ${info[1].runtimeType}, ${info[2].runtimeType}, ${info[3].runtimeType}");
+                eventInfos.add(EventInfo(info[0], info[1], info[2]));
+            }catch(e){
+                // print("== loadFileAsJson error: $e");
+            }
+        }
+    }
+
+    Color getBlockColorByEventType(String eventType){
+        // 根据eventType返回对应的颜色
+        for (var info in eventInfos){
+            if (info.name == eventType){
+                return info.color;
+            }
+        }
+        return Color.fromRGBO(0, 0, 0, 1);
+    }
+
+}
+
+class DataLoader extends ChangeNotifier {
+
+    // -todo: 把相关的历史数据都加载进来（除非是要看全部要分析了，不然都没必要全部加载）
+    // 还得有元数据啊（果然事儿教人一教就会啊
+
+    // 数据的增查改删API，任何动数据的事情都是这个类的实例提供服务
+
+    DateFormat formatter = DateFormat('yyyyMMdd');
+
+    // 这个类里面直接保持当前年的全部数据json（拢共才几MB大小的数据，长期保存在内存里也不是什么罪过）
+    // Map<String, dynamic> jsonData = {};
+    List<DayRecord> dayRecords = [];
+    ConfigLoader configLoader;
+
+    // static Future<DataLoader> create() async {
+    //   List<DayRecord> dayRecords = [];
+    //   DateTime now = DateTime.now();
+    //   File file = File('./${now.year}.json');
+    //   try {
+    //     String contents = await file.readAsString();
+    //     Map<String, dynamic> jsonData = json.decode(contents);
+    //     for (var date in jsonData.keys.toList()) {
+    //       dayRecords.add(DayRecord(date, jsonData[date]));
+    //     }
+    //   } catch (e) {
+    //     if (kDebugMode) {
+    //       print('== 读取文件出错: $e');
+    //     }
+    //   }
+    //   return DataLoader._(dayRecords);
+  
+
+    DataLoader(this.configLoader) {
+        // 不应该是简单粗暴直接加载当前年的全部数据，应该是准备好cacheData（全年数据可以异步加载
+        DateTime fileDate = DateTime.now();
+        print("== file: ${fileDate.year}.json");
+        File file = File('${fileDate.year}.json');
+        // Map<String, dynamic> jsonData = {};
+        loadFileAsJson(file);
+    }
+
+    Future<void> loadFileAsJson(File file) async {
+        dayRecords.clear();
+
+        file.readAsString().then((contents) {
+            if (contents == "") {
+                return;
+            }
+
+            var jsonData = jsonDecode(contents); // 如果输入是空字符串，这玩意儿居然会直接报错
+            for(var date in jsonData.keys.toList()){
+                // print("date: ${date}");
+                // print("jsonData[date]: ${jsonData[date]}");
+                try{
+                    dayRecords.add(DayRecord(date, jsonData[date], configLoader));
+                }catch(e){
+                    print("== loadFileAsJson error: $e, ${date}");
+                }
+            }
+        });
+
+        // rootBundle.loadString('asserts/name_data.json').then((value) {
+        //   contents = json.decode(value);
+        // });
+
+        
+        print("== loadFileAsJson dayRecords.length: ${dayRecords.length}");
+    }
+
+
+    // void addDate(){
+    //     DateTime now = DateTime.now();
+    //     String dataIndex = "${now.year}-${now.month}-${now.day}";
+    // }
+
+    Future<List<DayRecord>> loadDataOfYear(String year) async {
+        // 加载某一年的全部数据
+
+        List<String> dates = [];
+        Map<String, dynamic> jsonData = {};
+
+        // 读取文件内容
+        File file = File('./${year}.json');
+        try {
+            String contents = await file.readAsString();
+            jsonData = json.decode(contents);
+            dates = jsonData.keys.toList();
+        } catch (e) {
+            print('== loadDataOfYear error: $e');
+        }
+
+        // 初始化
+        List<DayRecord> data = List.generate(dates.length, (i) => DayRecord(dates[i], jsonData[dates[i]], configLoader));
+        return data;
+    }
+
+    Future<List<DayRecord>> loadCacheData() async {
+        // 启动的时候使用的，准备好当前时间点前7天、后两天的数据。如果前7天的时间在数据里找不到，那就得凑齐空白的补上
+        const int cacheDataDayCount = 7;
+        List<String> dates = [];
+        Map<String, dynamic> jsonData = {};
+        List<DayRecord> data = [];
+
+        // 当前日期（按照yyyMMdd的格式）
+        String currentDate = formatter.format(DateTime.now());
+
+        // 读取文件内容
+        File file = File('./${currentDate.substring(0,4)}.json');
+        try {
+            String contents = await file.readAsString();
+            jsonData = json.decode(contents);
+            dates = jsonData.keys.toList();            
+        } catch (e) {
+            print('== loadDataOfYear error: $e');
+        }
+
+        // 如果加载的数据里最新日期不是今天，需要给jsonData添加上直到今天为止每一天的空白DayBlockData作为占位
+        // jsonData是加了，是不是还该异步把数据写入到json文件里？
+        int missingDays = int.parse(currentDate) - int.parse(dates.last);
+        if (missingDays < 0){ // 在未来还有记录：加载过去七天和未来全部的记录，再额外补两天
+            data.addAll(List.generate(cacheDataDayCount, (i) => DayRecord(dates.sublist(dates.length - cacheDataDayCount + missingDays)[i], jsonData[dates[i]], configLoader)));
+            data.addAll(createEmptyDayRecords(dates.last, missingDays+2)); // 默认加两天的空白作为未来情况
+        }else if (missingDays < cacheDataDayCount){ // 在过去7天内有记录：加载过去7天内的全部记录，缺失的就补空白的
+            // todo: 这里的历史数据加载似乎有问题
+            data.addAll(List.generate(cacheDataDayCount-missingDays, (i) => DayRecord(dates.sublist(dates.length - cacheDataDayCount)[i], jsonData[dates[i]], configLoader)));
+            data.addAll(createEmptyDayRecords(dates.last, missingDays+2)); // 默认加两天的空白作为未来情况
+        }else{ // 过去7天是一点数据没有：那就创造7天的空白数据，另外给历史数据补空白数据到当前
+            // 如果当前时间距离上次记录的时间超过了cacheData的天数限制，则cacheData全是空DayRecord
+            data.addAll(createEmptyDayRecords((int.parse(currentDate) - 1).toString(), cacheDataDayCount+2));// 默认加两天的空白作为未来情况。但是如果未来已经有确定的内容了，那就把未来也加载进cacheData
+            // todo: 做一下补全外置json的操作
+            compensateHistoryData();
+        }
+
+        return data;
+    }
+
+    List<DayRecord> createEmptyDayRecords(String startDate, int range){
+        // 创造从startDate开始后往后range这么多天的空白日期记录
+        List<int> dates = List.generate(range-1, (i) => int.parse(startDate)+i); // range是1才有1个DayRecord，是0的话就一天都没有了
+        List<DayRecord> record = List.generate(range, (i) => DayRecord(dates[i].toString(), [], configLoader));
+
+        return record;
+    }
+
+    void compensateHistoryData(){
+
+    }
+
+    // Future<void> writeRecordsToData(List<DayRecord> records) async {
+    //     File file = File('./data/${currentDate.substring(0,4)}.json');
+
+    //     try {
+    // // 读取现有文件
+    //     File file = File(filePath);
+    //     if (await file.exists()) {
+    //         String contents = await file.readAsString();
+    //         Map<String, dynamic> jsonData = json.decode(contents);
+            
+    //         // 更新 JSON 数据中的特定键
+    //         jsonData[key] = newValue;
+            
+    //         // 将更新后的数据编码为 JSON 字符串
+    //         String updatedJsonString = json.encode(jsonData);
+            
+    //         // 写回文件
+    //         await file.writeAsString(updatedJsonString);
+    //         print('数据已成功更新到文件：$filePath');
+    //     } else {
+    //         print('文件不存在：$filePath');
+    //     }
+    //     } catch (e) {
+    //         print('更新文件时出错：$e');
+    //     }
+    // }
+
+}
