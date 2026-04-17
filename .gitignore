@@ -53,6 +53,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Android Gradle wrapper
+/android/gradle/wrapper/*.zip
+
 # Database files
 *.lock
 *.hive
