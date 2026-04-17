@@ -1,0 +1,14 @@
+这个路径下的代码是用于hive的
+*.dart的内容是对hive中的box中的值（value）进行定义
+*.g.dart的内容则是通过`dart run build_runner build`自动生成的
+
+使用`dart run build_runner watch`可以将对*.dart文件中的修改自动同步到对应的*.g.dart中
+
+
+
+hive的dayEventsRecord的表结构大概是：
+{
+    "202250102": [[0, 15, "sleep", "", ""], [16, 18, "eat", "", ""], [19, 25, "work", "", ""], ......],
+    "202250103": [[0, 10, "eat", "", ""], [11, 17, "sleep", "", ""], [18, 35, "work", "", ""], ......],
+    ......
+}
