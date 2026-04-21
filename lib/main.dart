@@ -20,6 +20,7 @@ import 'package:time_block/view/appBarViiew.dart';
 import 'package:time_block/view/buttonListView.dart';
 import 'package:time_block/view/dayBlocksView.dart';
 import 'package:time_block/view/editPage.dart';
+import 'package:time_block/view/analyzeView.dart';
 import 'package:time_block/util/migrateOldData.dart';
 import 'package:time_block/network/syncConfig.dart';
 // import 'package:time_block/network/dataSync.dart';
@@ -159,7 +160,7 @@ class TimeBlockApp extends StatelessWidget {
                         children: [
                             MainPage(title: 'TimeBlock'),
                             EditPage(title: 'EventInfoEdit'),
-                            Center(child: Text('analys')),
+                            AnalyzeView(title: 'Analyze'),
                         ],
                     ),
                 )
@@ -267,7 +268,11 @@ class _MainPageState extends State<MainPage> {
         return Scaffold(
             appBar: AppBar(
                 backgroundColor: Theme.of(context).colorScheme.background,
-                title: AppBarView(operationControl: operationControl, userProfileLoader: userProfileLoader),
+                title: AppBarView(
+                    operationControl: operationControl,
+                    userProfileLoader: userProfileLoader,
+                    scrollController: _scrollController,
+                ),
             ),
             body: Row(
               children: [

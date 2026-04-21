@@ -608,6 +608,9 @@ class OperationControl extends ChangeNotifier {
           userProfileLoader.dayRecords[date] = DayRecord(date, dayRecord?.events, userProfileLoader);
         }
 
+        // 重新标记当前时刻的 block（新建的 DayRecord 里所有 isRightNow 都是 false，
+        // 必须在 dayRecords 填完之后调用，否则找不到对应的 block 对象）
+        userProfileLoader.updateRightNowBlock(DateTime.now());
         notifyListeners();
     }
 

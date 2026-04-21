@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:time_block/dataStructure.dart';
 import 'package:time_block/loaders.dart';
 import 'package:time_block/network/dataSync.dart';
 import 'package:time_block/network/syncConfig.dart';
+import 'package:time_block/view/datePickerDialog.dart' as datePicker;
 
 
 class AppBarView extends StatefulWidget {
     OperationControl operationControl;
     UserProfileLoader userProfileLoader;
-    AppBarView({super.key, required this.operationControl, required this.userProfileLoader});
+    /// 主页面的 ScrollController，选择日期后用于滚动到目标位置
+    final ScrollController? scrollController;
+    AppBarView({super.key, required this.operationControl, required this.userProfileLoader, this.scrollController});
 
     @override
     State<AppBarView> createState() => _AppBarViewState();
@@ -68,6 +70,48 @@ class _AppBarViewState extends State<AppBarView> {
         );
     }
 
+    /// 打开日期选择弹窗，选中后跳转
+    Future<void> _openDatePicker(BuildContext context) async {
+        // 当前 renderDates 的中间那天作为初始焦点
+        final renderDates = widget.userProfileLoader.renderDates;
+        DateTime initialFocus = DateTime.now();
+        if (renderDates.isNotEmpty) {
+            final mid = renderDates[renderDates.length ~/ 2];
+            try {
+                initialFocus = DateTime.parse(
+                    '${mid.substring(0, 4)}-${mid.substring(4, 6)}-${mid.substring(6)}',
+                );
+            } catch (_) {}
+        }
+
+        await showDialog(
+            context: context,
+            builder: (_) => datePicker.DatePickerDialog(
+                initialFocusDate: initialFocus,
+                onDateSelected: (selectedDate) {
+                    // 更新 renderDates，以选中日期为中心
+                    widget.operationControl.jumpRenderDates(
+                        widget.userProfileLoader, selectedDate);
+                    // 滚动到中间（第 aroundDayCount 个日期 = index 3）
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                        final sc = widget.scrollController;
+                        if (sc != null && sc.hasClients) {
+                            const int centerIndex = 3;
+                            double targetOffset = centerIndex * 630.0;
+                            final maxExt = sc.position.maxScrollExtent;
+                            if (targetOffset > maxExt) targetOffset = maxExt;
+                            sc.animateTo(
+                                targetOffset,
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOut,
+                            );
+                        }
+                    });
+                },
+            ),
+        );
+    }
+
     @override
     Widget build(BuildContext context) {
       final BorderRadius buttonBorderRadius = BorderRadius.circular(6.0);
@@ -76,6 +120,20 @@ class _AppBarViewState extends State<AppBarView> {
         mainAxisAlignment : MainAxisAlignment.end,
         children: [
           Text(Provider.of<OperationControl>(context, listen: false).selectedBlockEvent),
+          // ── 日期选择按钮 ──
+          ElevatedButton(
+            style: ButtonStyle(
+                shape: MaterialStateProperty.all<RoundedRectangleBorder>(RoundedRectangleBorder(borderRadius: buttonBorderRadius)),
+                backgroundColor: MaterialStateProperty.all(Colors.amber.shade700),
+                textStyle: MaterialStateProperty.all(const TextStyle(color: Colors.black)),
+                padding: MaterialStateProperty.all(const EdgeInsets.symmetric(horizontal: 8, vertical: 0)),
+                minimumSize: MaterialStateProperty.all(const Size(32, 32)),
+            ),
+            onPressed: () => _openDatePicker(context),
+            child: const Icon(Icons.calendar_today, size: 14, color: Colors.black),
+          ),
+          const Padding(padding: EdgeInsets.all(2.0)),
+          // ── 刷新按钮 ──
           ElevatedButton(
             style: ButtonStyle(
                 shape: MaterialStateProperty.all<RoundedRectangleBorder>(RoundedRectangleBorder(borderRadius: buttonBorderRadius)),
@@ -86,6 +144,17 @@ class _AppBarViewState extends State<AppBarView> {
                 setState(() {
                     print('Button 刷新 pressed');
                     Provider.of<OperationControl>(context, listen: false).refreshRenderDates(widget.userProfileLoader);
+                    // 刷新后也滚回中间位置
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                        final sc = widget.scrollController;
+                        if (sc != null && sc.hasClients) {
+                            sc.animateTo(
+                                3 * 630.0,
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOut,
+                            );
+                        }
+                    });
                 });
             },
             child: const Text("刷新", style: TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.normal)),
