@@ -490,8 +490,17 @@ class OperationControl extends ChangeNotifier {
                 }
         } 
         
-        Set<String> selectedBlocksEvent = List.generate(selectedBlocks.length, (i) => selectedBlocks[i].eventType).toSet();
-        if (selectedBlocksEvent.length == 1){ selectedBlockEvent = selectedBlocksEvent.first; } else { selectedBlockEvent = ""; }
+        // 按时间顺序收集非空 eventType，合并相邻相同项后拼接显示
+        // 这样即使选中了多种不同类型的色块，也能按顺序看到事件名称序列
+        final List<String> orderedEvents = [];
+        String lastEvent = '';
+        for (final b in selectedBlocks) {
+            if (b.eventType.isNotEmpty && b.eventType != lastEvent) {
+                orderedEvents.add(b.eventType);
+                lastEvent = b.eventType;
+            }
+        }
+        selectedBlockEvent = orderedEvents.join(' · ');
         notifyListeners();
 
         // 给selectedBlocks按时间排个序
@@ -546,6 +555,7 @@ class OperationControl extends ChangeNotifier {
 
         // selectedBlocks[0].unselectBlock(); // 别问为啥，不单独写这句话反正就是会有bug，写了就对了
         selectedBlocks.clear();
+        selectedBlockEvent = "";   // 清空顶部事件名显示
         notifyListeners();
     }
 

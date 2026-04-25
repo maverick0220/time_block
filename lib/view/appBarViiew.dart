@@ -119,7 +119,16 @@ class _AppBarViewState extends State<AppBarView> {
       return Row(
         mainAxisAlignment : MainAxisAlignment.end,
         children: [
-          Text(Provider.of<OperationControl>(context, listen: false).selectedBlockEvent),
+          // 选中色块的事件名称（按时间顺序，多类型用 · 分隔）
+          Expanded(
+            child: Text(
+              Provider.of<OperationControl>(context, listen: true).selectedBlockEvent,
+              style: const TextStyle(fontSize: 11, color: Colors.black87),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+            ),
+          ),
+          const SizedBox(width: 6),
           // ── 日期选择按钮 ──
           ElevatedButton(
             style: ButtonStyle(

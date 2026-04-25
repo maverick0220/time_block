@@ -59,20 +59,26 @@ class _EventInfoEditViewState extends State<EventInfoEditView> {
                             style: const TextStyle(color: Colors.white),
                         ),
                         const Spacer(),
-                        // const SizedBox(width: 8.0),
+                        // 编辑按钮
                         IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                             alignment: Alignment.centerRight,
-                            icon: const Icon(Icons.edit, color: Colors.white),
+                            icon: const Icon(Icons.edit, color: Colors.white, size: 18),
                             onPressed: () => widget.onEditPressed(widget.eventInfo),
                         ),
-                        const SizedBox(width: 2.0),
+                        const SizedBox(width: 4.0),
                         IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                             alignment: Alignment.centerRight,
-                            icon: const Icon(Icons.delete, color: Colors.white),
+                            icon: const Icon(Icons.delete, color: Colors.white54, size: 18),
                             onPressed: () {
                                 Provider.of<OperationControl>(context, listen: false).deleteEventInfo(widget.eventInfo, Provider.of<UserProfileLoader>(context, listen: false));
                             },
                         ),
+                        // 与右侧 ReorderableListView 拖动手柄保持距离
+                        const SizedBox(width: 32.0),
                     ],
                 ),
             ),

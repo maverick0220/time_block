@@ -128,6 +128,7 @@ class DataSync {
     }
 
     final range = await SyncConfig.calcUploadRange(fallbackStartDate: effectiveFallback);
+    // calcUploadRange 新逻辑始终返回包含今天的范围，不再返回 null
     if (range == null) {
       return SyncResult(success: true, message: '已是最新，无需同步', uploadedDays: 0);
     }
@@ -211,8 +212,9 @@ class DataSync {
         print('== DataSync.runFullSync: patched $dateKey (${eventRecords.length} events)');
       }
 
-      // 8. 同步成功，更新 lastSyncEndDate
+      // 8. 同步成功，更新 lastSyncEndDate 和时间戳
       await SyncConfig.setLastSyncEndDate(rangeEnd);
+      await SyncConfig.setLastSyncTimestamp();
 
       // 9. 组装结果消息
       String msg = result['message']?.toString() ?? '同步完成';

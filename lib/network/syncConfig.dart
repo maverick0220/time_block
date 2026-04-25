@@ -11,6 +11,10 @@ class SyncConfig {
   /// 下次同步时，将从此日期的次日开始上传，直到今天
   static const String _lastSyncEndDateKey = 'lastSyncEndDate';
 
+  /// 上次成功同步的 UTC 时间戳（ISO8601 字符串）
+  /// 用于判断"今天是否已同步"——当天内多次同步需要重新上传当天数据
+  static const String _lastSyncTimestampKey = 'lastSyncTimestamp';
+
   static Box<String>? _box;
 
   /// 初始化配置 box（应在 main() 中调用一次）
@@ -72,12 +76,36 @@ class SyncConfig {
     await box.put(_lastSyncEndDateKey, date);
   }
 
+  // ─────────────────────────────────────────────
+  // 上次同步时间戳
+  // ─────────────────────────────────────────────
+
+  /// 读取上次同步时间戳（ISO8601 字符串）；若从未同步返回 null
+  static Future<DateTime?> getLastSyncTimestamp() async {
+    final box = await _ensureBox();
+    final v = box.get(_lastSyncTimestampKey, defaultValue: '');
+    if (v == null || v.isEmpty) return null;
+    try {
+      return DateTime.parse(v);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 保存当前时刻为上次同步时间戳
+  static Future<void> setLastSyncTimestamp() async {
+    final box = await _ensureBox();
+    await box.put(_lastSyncTimestampKey, DateTime.now().toIso8601String());
+  }
+
   /// 计算本次需要上传的日期范围 [startDate, endDate]（格式均为 "YYYYMMDD"）
   ///
-  /// - startDate: 上次同步截止日期的次日；若从未同步，则由调用方传入默认起始日期
-  /// - endDate  : 今天
+  /// 新逻辑：
+  /// - endDate   = 今天（始终包含今天，确保当天多次同步都能上传最新状态）
+  /// - startDate = 上次同步日期（不再加 +1 天，保证今天的数据每次都上传）；
+  ///              若从未同步，使用 fallbackStartDate 或今天
   ///
-  /// 返回 null 表示无需上传（startDate > endDate）
+  /// 返回 null 仅在内部错误时使用，正常情况始终返回包含今天的范围
   static Future<List<String>?> calcUploadRange({String? fallbackStartDate}) async {
     final today = _formatDate(DateTime.now());
     final lastEnd = await getLastSyncEndDate();
@@ -87,18 +115,13 @@ class SyncConfig {
       // 从未同步：使用调用方传入的默认起始日期，或者今天
       startDate = fallbackStartDate ?? today;
     } else {
-      // 上次同步截止日期的次日
-      final lastEndDt = _parseDate(lastEnd);
-      if (lastEndDt == null) {
-        startDate = fallbackStartDate ?? today;
-      } else {
-        final nextDt = lastEndDt.add(const Duration(days: 1));
-        startDate = _formatDate(nextDt);
-      }
+      // 从上次同步的那天开始（含当天），确保今天的数据在当天多次同步时都会上传
+      // 如果上次同步是今天之前，则从上次截止日期开始（覆盖可能的增量变化）
+      startDate = lastEnd.compareTo(today) < 0 ? lastEnd : today;
     }
 
-    // 如果起始日期已经超过今天，没有需要上传的数据
-    if (startDate.compareTo(today) > 0) return null;
+    // startDate 最早不能超过 today（正常不会触发）
+    if (startDate.compareTo(today) > 0) startDate = today;
 
     return [startDate, today];
   }

@@ -60,20 +60,26 @@ app.*.map.json
 *.lock
 *.hive
 
-# Large data files
-*.json
+# Large data files（根目录级别的 json，不影响 server/ 下的源码）
+/*.json
 
-# Shell scripts
-*.sh
+# Shell scripts（根目录级别）
+/*.sh
 
-# Python files
-*.py
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
 
 # Build directories
 build/
 
-# Server directories
-server/
+# Server — 只排除运行时数据，源码纳入版本控制
+server/data/
+server/__pycache__/
+server/*.db
+server/*.db-shm
+server/*.db-wal
 
 # Test directories
 test/

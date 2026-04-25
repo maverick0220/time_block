@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TimeBlock Dashboard</title>
+<style>
+  /* ─── Reset & Base ─── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #0e0e10;
+    --bg2:         #161618;
+    --bg3:         #1e1e21;
+    --bg4:         #26262b;
+    --border:      #2e2e34;
+    --text:        #e2e2e8;
+    --text2:       #8888a0;
+    --text3:       #55556a;
+    --accent:      #5b8fff;
+    --green:       #2ecc6a;
+    --yellow:      #f0c040;
+    --red:         #e05050;
+    --panel-w:     360px;
+    --cal-cell:    44px;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  /* ─── Layout ─── */
+  #app {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* ─── Left: Calendar ─── */
+  #cal-panel {
+    width: var(--panel-w);
+    min-width: var(--panel-w);
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  #cal-header {
+    padding: 18px 16px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  #cal-header h1 {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.3px;
+  }
+
+  #cal-header .subtitle {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text2);
+  }
+
+  #cal-legend {
+    display: flex;
+    gap: 12px;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    color: var(--text2);
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  #cal-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0 20px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg4) transparent;
+  }
+
+  #cal-scroll::-webkit-scrollbar { width: 4px; }
+  #cal-scroll::-webkit-scrollbar-track { background: transparent; }
+  #cal-scroll::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+
+  /* ─── Calendar Week Row ─── */
+  .week-row {
+    display: flex;
+    align-items: stretch;
+    min-height: var(--cal-cell);
+  }
+
+  .week-label {
+    width: 52px;
+    min-width: 52px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding: 6px 8px 0 0;
+    font-size: 10px;
+    color: var(--text3);
+    flex-shrink: 0;
+    line-height: 1.3;
+    text-align: right;
+  }
+
+  .week-label .lbl-month {
+    color: var(--text2);
+    font-weight: 600;
+    font-size: 11px;
+  }
+
+  .week-cells {
+    flex: 1;
+    display: flex;
+    gap: 3px;
+    padding: 3px 12px 3px 0;
+  }
+
+  .day-cell {
+    flex: 1;
+    aspect-ratio: 1;
+    min-width: 0;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    transition: transform 0.1s, box-shadow 0.1s;
+    position: relative;
+    user-select: none;
+  }
+
+  .day-cell:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    z-index: 2;
+  }
+
+  .day-cell.selected {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .day-cell.today::after {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: white;
+    opacity: 0.9;
+  }
+
+  /* Day cell states */
+  .day-cell.state-full   { background: #1a5c32; color: #7fffa8; }
+  .day-cell.state-conflict { background: #5c4a00; color: #f0c040; }
+  .day-cell.state-partial { background: #1a2e4a; color: #7ab8ff; }
+  .day-cell.state-empty  { background: #1a1a1e; color: var(--text3); }
+  .day-cell.state-filler { background: transparent; cursor: default; pointer-events: none; }
+
+  /* ─── Right: Detail Panel ─── */
+  #detail-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  #detail-header {
+    padding: 18px 24px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  #detail-date-display {
+    flex: 1;
+  }
+
+  #detail-date-display .date-big {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  #detail-date-display .date-sub {
+    font-size: 12px;
+    color: var(--text2);
+    margin-top: 2px;
+  }
+
+  #detail-stats {
+    display: flex;
+    gap: 20px;
+  }
+
+  .stat-item {
+    text-align: center;
+  }
+
+  .stat-val {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .stat-lbl {
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 1px;
+  }
+
+  #detail-scroll {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--bg4) transparent;
+  }
+
+  #detail-scroll::-webkit-scrollbar { width: 4px; }
+  #detail-scroll::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 2px; }
+
+  #detail-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text3);
+    gap: 12px;
+  }
+
+  #detail-empty .icon { font-size: 48px; opacity: 0.3; }
+  #detail-empty .hint { font-size: 14px; }
+
+  /* ─── Time blocks grid ─── */
+  #blocks-container {
+    padding: 16px 24px 24px;
+  }
+
+  .hour-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 2px;
+    min-height: 28px;
+  }
+
+  .hour-label {
+    width: 52px;
+    text-align: right;
+    padding-right: 10px;
+    font-size: 11px;
+    color: var(--text3);
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .blocks-row {
+    display: flex;
+    gap: 2px;
+    flex: 1;
+  }
+
+  .time-block {
+    flex: 1;
+    height: 26px;
+    border-radius: 3px;
+    position: relative;
+    cursor: default;
+    transition: filter 0.15s;
+  }
+
+  .time-block:hover {
+    filter: brightness(1.25);
+  }
+
+  .time-block.empty-block {
+    background: var(--bg3);
+  }
+
+  /* ─── Event Legend (right side) ─── */
+  #event-legend {
+    padding: 12px 24px 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0;
+    padding-bottom: 12px;
+  }
+
+  .evt-tag {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .evt-tag .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ─── Tooltip ─── */
+  #tooltip {
+    position: fixed;
+    background: #2a2a30;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--text);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+    z-index: 999;
+    max-width: 200px;
+    line-height: 1.5;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+
+  #tooltip.visible { opacity: 1; }
+
+  /* ─── Loading ─── */
+  #loading {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    flex-direction: column;
+    gap: 16px;
+    color: var(--text2);
+    font-size: 14px;
+  }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--bg4);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ─── Scrollbar month separator ─── */
+  .month-separator {
+    padding: 8px 16px 2px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text2);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* ─── Summary bar ─── */
+  #summary-bar {
+    display: flex;
+    gap: 0;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    justify-content: space-around;
+  }
+
+  .summary-item {
+    text-align: center;
+  }
+
+  .summary-val { font-size: 15px; font-weight: 700; }
+  .summary-lbl { font-size: 10px; color: var(--text3); margin-top: 2px; }
+  .v-green { color: var(--green); }
+  .v-yellow { color: var(--yellow); }
+  .v-blue { color: var(--accent); }
+  .v-text2 { color: var(--text2); }
+
+  /* no data message */
+  .no-data-day {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 120px;
+    color: var(--text3);
+    font-size: 13px;
+  }
+
+  /* ─── Conflict badge ─── */
+  .conflict-badge {
+    display: inline-block;
+    background: var(--yellow);
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <span>加载数据中…</span>
+</div>
+
+<div id="app" style="display:none">
+
+  <!-- ── Left: Calendar ── -->
+  <div id="cal-panel">
+    <div id="cal-header">
+      <h1>TimeBlock</h1>
+      <div class="subtitle" id="header-subtitle">数据可视化</div>
+    </div>
+    <div id="cal-legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#2ecc6a"></div>完整</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f0c040"></div>有冲突</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#4a7ab8"></div>有数据</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#1a1a1e;border:1px solid #333"></div>无数据</div>
+    </div>
+    <div id="cal-scroll"></div>
+    <div id="summary-bar">
+      <div class="summary-item"><div class="summary-val v-green" id="s-full">—</div><div class="summary-lbl">完整天</div></div>
+      <div class="summary-item"><div class="summary-val v-yellow" id="s-conflict">—</div><div class="summary-lbl">冲突天</div></div>
+      <div class="summary-item"><div class="summary-val v-blue" id="s-partial">—</div><div class="summary-lbl">部分天</div></div>
+      <div class="summary-item"><div class="summary-val v-text2" id="s-total">—</div><div class="summary-lbl">总记录</div></div>
+    </div>
+  </div>
+
+  <!-- ── Right: Detail ── -->
+  <div id="detail-panel">
+    <div id="detail-header">
+      <div id="detail-date-display">
+        <div class="date-big" id="detail-title">点击左侧日历查看详情</div>
+        <div class="date-sub" id="detail-sub"></div>
+      </div>
+      <div id="detail-stats" style="display:none">
+        <div class="stat-item"><div class="stat-val" id="ds-events">0</div><div class="stat-lbl">事件段</div></div>
+        <div class="stat-item"><div class="stat-val" id="ds-covered">0%</div><div class="stat-lbl">覆盖率</div></div>
+        <div class="stat-item"><div class="stat-val" id="ds-hours">0h</div><div class="stat-lbl">记录时长</div></div>
+      </div>
+    </div>
+    <div id="event-legend"></div>
+    <div id="detail-scroll">
+      <div id="detail-empty">
+        <div class="icon">📅</div>
+        <div class="hint">选择一个日期查看事件记录</div>
+      </div>
+      <div id="blocks-container" style="display:none"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// Data & State
+// ═══════════════════════════════════════════════
+
+let gData = null;          // API 返回的原始数据
+let gColorMap = {};        // eventName → {r,g,b}
+let gSelectedDate = null;  // 当前选中日期 "YYYYMMDD"
+
+const WEEK_DAYS = ['日', '一', '二', '三', '四', '五', '六'];
+const MONTHS_ZH = ['一月','二月','三月','四月','五月','六月',
+                   '七月','八月','九月','十月','十一月','十二月'];
+
+// ═══════════════════════════════════════════════
+// Utils
+// ═══════════════════════════════════════════════
+
+function parseDate(s) {
+  // "20250101" → Date
+  return new Date(+s.slice(0,4), +s.slice(4,6)-1, +s.slice(6,8));
+}
+
+function fmtDate(s) {
+  const d = parseDate(s);
+  return `${d.getFullYear()} 年 ${d.getMonth()+1} 月 ${d.getDate()} 日`;
+}
+
+function fmtDateSub(s) {
+  const d = parseDate(s);
+  const dow = ['周日','周一','周二','周三','周四','周五','周六'][d.getDay()];
+  return dow;
+}
+
+function todayStr() {
+  const d = new Date();
+  const mm = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return `${d.getFullYear()}${mm}${dd}`;
+}
+
+function blockToTime(idx) {
+  // idx 0..95 → "00:00"
+  const h = Math.floor(idx / 4);
+  const m = (idx % 4) * 15;
+  return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+function rgbStr(c, alpha=1) {
+  if (!c) return `rgba(60,60,80,${alpha})`;
+  return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+}
+
+function hexLuminance(c) {
+  if (!c) return 0;
+  const r = c.r/255, g = c.g/255, b = c.b/255;
+  return 0.2126*r + 0.7152*g + 0.0722*b;
+}
+
+function contrastText(c) {
+  return hexLuminance(c) > 0.45 ? '#111' : '#eee';
+}
+
+// ═══════════════════════════════════════════════
+// Day State Analysis
+// ═══════════════════════════════════════════════
+
+function getDayState(dateStr) {
+  const hasConflict = gData.conflictDates.includes(dateStr);
+  const events = gData.dayRecords[dateStr];
+
+  if (hasConflict) return 'conflict';
+  if (!events || events.length === 0) return 'empty';
+
+  // 计算覆盖块数
+  let covered = 0;
+  for (const e of events) {
+    covered += (e[1] - e[0] + 1);
+  }
+  if (covered >= 96) return 'full';
+  return 'partial';
+}
+
+// ═══════════════════════════════════════════════
+// Calendar Builder
+// ═══════════════════════════════════════════════
+
+function buildCalendar() {
+  const dayKeys = Object.keys(gData.dayRecords).sort();
+  if (dayKeys.length === 0) return;
+
+  const today = todayStr();
+  const conflictSet = new Set(gData.conflictDates);
+
+  // Find date range to display
+  let minDate = parseDate(dayKeys[0]);
+  let maxDate = parseDate(dayKeys[dayKeys.length - 1]);
+  const todayDate = parseDate(today);
+  if (todayDate > maxDate) maxDate = todayDate;
+
+  // Go to Monday of the first week
+  const startDay = new Date(minDate);
+  startDay.setDate(startDay.getDate() - startDay.getDay()); // go to Sunday
+
+  const container = document.getElementById('cal-scroll');
+  container.innerHTML = '';
+
+  // Stats counters
+  let fullCnt = 0, conflictCnt = 0, partialCnt = 0, totalDays = dayKeys.length;
+
+  let curDay = new Date(startDay);
+  let lastMonth = -1;
+
+  while (curDay <= maxDate || curDay.getDay() !== 0) {
+    // Check if we need a new week row
+    if (curDay.getDay() === 0) {
+      // Start of week — create week row
+      const weekRow = document.createElement('div');
+      weekRow.className = 'week-row';
+
+      // Compute label: show month if new month starts in this week
+      const labelEl = document.createElement('div');
+      labelEl.className = 'week-label';
+
+      // Find if any day in this week starts a new month
+      let labelText = '';
+      let labelMonth = -1;
+      for (let di = 0; di < 7; di++) {
+        const d = new Date(curDay);
+        d.setDate(d.getDate() + di);
+        if (d.getDate() === 1 || (di === 0 && d.getMonth() !== lastMonth)) {
+          labelMonth = d.getMonth();
+        }
+      }
+      if (labelMonth !== -1 && labelMonth !== lastMonth) {
+        lastMonth = labelMonth;
+        labelEl.innerHTML = `<span class="lbl-month">${MONTHS_ZH[labelMonth]}</span>`;
+      } else {
+        // show day number of first day in week
+        labelEl.textContent = curDay.getDate();
+      }
+
+      weekRow.appendChild(labelEl);
+
+      const cellsEl = document.createElement('div');
+      cellsEl.className = 'week-cells';
+
+      for (let di = 0; di < 7; di++) {
+        const d = new Date(curDay);
+        d.setDate(d.getDate() + di);
+
+        const mm = String(d.getMonth()+1).padStart(2,'0');
+        const dd = String(d.getDate()).padStart(2,'0');
+        const dStr = `${d.getFullYear()}${mm}${dd}`;
+
+        const cell = document.createElement('div');
+        cell.className = 'day-cell';
+        cell.textContent = d.getDate();
+
+        if (d > maxDate || d < minDate) {
+          // out of range filler
+          cell.classList.add('state-filler');
+          cell.style.opacity = '0';
+        } else {
+          const state = getDayState(dStr);
+          if (state === 'full') { cell.classList.add('state-full'); fullCnt++; }
+          else if (state === 'conflict') { cell.classList.add('state-conflict'); conflictCnt++; }
+          else if (state === 'partial') { cell.classList.add('state-partial'); partialCnt++; }
+          else { cell.classList.add('state-empty'); }
+
+          if (dStr === today) cell.classList.add('today');
+
+          cell.dataset.date = dStr;
+          cell.addEventListener('click', () => selectDate(dStr));
+
+          // Tooltip on hover
+          cell.addEventListener('mouseenter', e => showTooltip(e, dStr, state));
+          cell.addEventListener('mouseleave', hideTooltip);
+        }
+
+        cellsEl.appendChild(cell);
+      }
+
+      weekRow.appendChild(cellsEl);
+      container.appendChild(weekRow);
+    }
+
+    curDay.setDate(curDay.getDate() + 1);
+  }
+
+  // Update summary
+  document.getElementById('s-full').textContent = fullCnt;
+  document.getElementById('s-conflict').textContent = conflictCnt;
+  document.getElementById('s-partial').textContent = partialCnt;
+  document.getElementById('s-total').textContent = totalDays;
+
+  // Update header subtitle
+  if (dayKeys.length > 0) {
+    const ver = gData.currentVersion;
+    document.getElementById('header-subtitle').textContent =
+      `v${ver} · ${dayKeys[0].slice(0,4)}-${dayKeys[0].slice(4,6)}-${dayKeys[0].slice(6)} 至 ${dayKeys[dayKeys.length-1].slice(0,4)}-${dayKeys[dayKeys.length-1].slice(4,6)}-${dayKeys[dayKeys.length-1].slice(6)}`;
+  }
+
+  // Scroll to today or latest
+  const todayCell = container.querySelector(`[data-date="${today}"]`);
+  if (todayCell) {
+    setTimeout(() => todayCell.scrollIntoView({ block: 'center', behavior: 'smooth' }), 100);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// Tooltip
+// ═══════════════════════════════════════════════
+
+function showTooltip(e, dateStr, state) {
+  const tooltip = document.getElementById('tooltip');
+  const stateText = { full: '✅ 完整覆盖', conflict: '⚠️ 存在冲突', partial: '📌 有数据', empty: '○ 无记录' };
+  const events = gData.dayRecords[dateStr] || [];
+
+  let covered = 0;
+  for (const ev of events) covered += ev[1] - ev[0] + 1;
+  const pct = Math.round(covered / 96 * 100);
+
+  const dateObj = parseDate(dateStr);
+  const dowZh = ['周日','周一','周二','周三','周四','周五','周六'][dateObj.getDay()];
+
+  tooltip.innerHTML = `
+    <div style="font-weight:600;margin-bottom:4px">${dateStr.slice(0,4)}-${dateStr.slice(4,6)}-${dateStr.slice(6)} ${dowZh}</div>
+    <div>${stateText[state] || ''}</div>
+    ${events.length > 0 ? `<div style="color:#8888a0;margin-top:2px">${events.length} 段事件 · ${pct}% 覆盖</div>` : ''}
+  `;
+
+  tooltip.classList.add('visible');
+  positionTooltip(e);
+}
+
+function hideTooltip() {
+  document.getElementById('tooltip').classList.remove('visible');
+}
+
+document.addEventListener('mousemove', e => {
+  const tooltip = document.getElementById('tooltip');
+  if (tooltip.classList.contains('visible')) positionTooltip(e);
+});
+
+function positionTooltip(e) {
+  const t = document.getElementById('tooltip');
+  const x = e.clientX + 14;
+  const y = e.clientY - 10;
+  t.style.left = Math.min(x, window.innerWidth - 220) + 'px';
+  t.style.top = Math.max(0, y) + 'px';
+}
+
+// ═══════════════════════════════════════════════
+// Detail View — Event Legend
+// ═══════════════════════════════════════════════
+
+function buildEventLegend() {
+  const legendEl = document.getElementById('event-legend');
+  legendEl.innerHTML = '';
+
+  for (const ei of gData.eventInfo) {
+    const color = ei.color || {};
+    const tag = document.createElement('div');
+    tag.className = 'evt-tag';
+    tag.style.background = rgbStr(color, 0.18);
+    tag.style.border = `1px solid ${rgbStr(color, 0.4)}`;
+    tag.style.color = rgbStr(color, 1);
+
+    tag.innerHTML = `<div class="dot" style="background:${rgbStr(color)}"></div>${ei.name}`;
+    legendEl.appendChild(tag);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// Detail View — Day Blocks
+// ═══════════════════════════════════════════════
+
+function selectDate(dateStr) {
+  // Deselect previous
+  if (gSelectedDate) {
+    const prev = document.querySelector(`[data-date="${gSelectedDate}"]`);
+    if (prev) prev.classList.remove('selected');
+  }
+  gSelectedDate = dateStr;
+
+  // Highlight selected
+  const cell = document.querySelector(`[data-date="${dateStr}"]`);
+  if (cell) cell.classList.add('selected');
+
+  // Update header
+  const hasConflict = gData.conflictDates.includes(dateStr);
+  const conflictBadge = hasConflict
+    ? '<span class="conflict-badge">冲突</span>'
+    : '';
+  document.getElementById('detail-title').innerHTML = fmtDate(dateStr) + conflictBadge;
+  document.getElementById('detail-sub').textContent = fmtDateSub(dateStr);
+
+  // Build blocks
+  const events = gData.dayRecords[dateStr] || [];
+
+  // Stats
+  let covered = 0;
+  for (const e of events) covered += e[1] - e[0] + 1;
+  const pct = Math.round(covered / 96 * 100);
+  const hours = (covered * 15 / 60).toFixed(1);
+
+  document.getElementById('ds-events').textContent = events.length;
+  document.getElementById('ds-covered').textContent = pct + '%';
+  document.getElementById('ds-hours').textContent = hours + 'h';
+  document.getElementById('detail-stats').style.display = 'flex';
+
+  // Show / hide
+  document.getElementById('detail-empty').style.display = events.length === 0 ? 'flex' : 'none';
+  const blocksContainer = document.getElementById('blocks-container');
+  blocksContainer.style.display = events.length === 0 ? 'none' : 'block';
+
+  if (events.length === 0) return;
+
+  // Build 96-slot array
+  const slots = new Array(96).fill(null); // null = empty
+  for (const e of events) {
+    for (let i = e[0]; i <= e[1]; i++) {
+      slots[i] = { name: e[2], type: e[3], comment: e[4] };
+    }
+  }
+
+  blocksContainer.innerHTML = '';
+
+  // Render 24 rows (each row = 1 hour = 4 blocks)
+  for (let h = 0; h < 24; h++) {
+    const row = document.createElement('div');
+    row.className = 'hour-row';
+
+    const lbl = document.createElement('div');
+    lbl.className = 'hour-label';
+    // Show label every 2 hours or at 0
+    lbl.textContent = `${String(h).padStart(2,'0')}:00`;
+    row.appendChild(lbl);
+
+    const bRow = document.createElement('div');
+    bRow.className = 'blocks-row';
+
+    for (let q = 0; q < 4; q++) {
+      const idx = h * 4 + q;
+      const slot = slots[idx];
+      const block = document.createElement('div');
+      block.className = 'time-block';
+
+      if (slot) {
+        const color = gColorMap[slot.name];
+        block.style.background = rgbStr(color);
+        block.style.boxShadow = `inset 0 0 0 1px ${rgbStr(color, 0.3)}`;
+
+        // Tooltip
+        const timeStr = blockToTime(idx) + '–' + blockToTime(idx + 1);
+        block.addEventListener('mouseenter', e => {
+          let content = `<b>${slot.name}</b><br><span style="color:var(--text2)">${timeStr}</span>`;
+          if (slot.comment) content += `<br><span style="color:var(--text2)">${slot.comment}</span>`;
+          const tooltip = document.getElementById('tooltip');
+          tooltip.innerHTML = content;
+          tooltip.classList.add('visible');
+        });
+        block.addEventListener('mouseleave', hideTooltip);
+      } else {
+        block.classList.add('empty-block');
+      }
+
+      bRow.appendChild(block);
+    }
+
+    row.appendChild(bRow);
+    blocksContainer.appendChild(row);
+  }
+
+  // Scroll detail to midnight (top) initially
+  document.getElementById('detail-scroll').scrollTop = 0;
+}
+
+// ═══════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════
+
+async function init() {
+  try {
+    const resp = await fetch('/api/dashboard-data');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    gData = await resp.json();
+
+    // Build color map
+    for (const ei of gData.eventInfo) {
+      gColorMap[ei.name] = ei.color || null;
+    }
+
+    buildEventLegend();
+    buildCalendar();
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('app').style.display = 'flex';
+
+  } catch (err) {
+    document.getElementById('loading').innerHTML =
+      `<div style="color:#e05050;font-size:16px">❌ 加载失败</div>
+       <div style="color:#8888a0">${err.message}</div>
+       <div style="color:#55556a;font-size:12px;margin-top:8px">请确认服务端正在运行并刷新页面</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
