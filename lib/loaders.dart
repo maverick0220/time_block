@@ -359,6 +359,33 @@ class UserProfileLoader extends ChangeNotifier {
     }
 
 
+    /// 同步后调用：从 Hive eventInfoBox 重建内存中的 eventInfos 列表，
+    /// 并按 [SyncConfig.getEventInfoOrder] 排序，然后触发 UI 刷新。
+    ///
+    /// 应在 DataSync 的 _applyServerEventInfo 写入 Hive 后调用。
+    Future<void> applyServerEventInfo() async {
+        // 重新读取已更新的 Hive 数据
+        final Map<String, EventInfo> infoMap = {};
+        for (final key in eventInfoRecordBox.keys) {
+            final rec = eventInfoRecordBox.get(key as String);
+            if (rec != null) {
+                infoMap[rec.eventName] = EventInfo(rec.eventName, rec.color_rgb);
+            }
+        }
+
+        // 按持久化顺序重建列表
+        final savedOrder = await SyncConfig.getEventInfoOrder();
+        final orderedNames = savedOrder.where((n) => infoMap.containsKey(n)).toList();
+        final unorderedNames = infoMap.keys.where((n) => !orderedNames.contains(n)).toList();
+
+        eventInfos
+            ..clear()
+            ..addAll([...orderedNames, ...unorderedNames].map((n) => infoMap[n]!));
+
+        print('== UserProfileLoader.applyServerEventInfo: rebuilt ${eventInfos.length} items, order: ${eventInfos.map((e) => e.name).toList()}');
+        notifyListeners();
+    }
+
     /// 同步收到补丁后调用：将指定日期的数据从 Hive 重新加载到内存中的 dayRecords，
     /// 并触发 UI 刷新（无论该日期是否在当前 renderDates 窗口内）
     void applyPatchedDates(List<String> dates) {
@@ -439,7 +466,134 @@ class OperationControl extends ChangeNotifier {
     String selectedBlockEvent = "";
     List<String> renderDates = [];
 
+    // ─────────────────────────────────────────────
+    // 长按拖动选中状态
+    // ─────────────────────────────────────────────
+    bool isLongPressSelecting = false;
+    Block? longPressStartBlock;
+    Block? longPressCurrentBlock;
+    List<Block> longPressPreviewBlocks = [];
+
+    /// 开始长按拖动选择
+    void startLongPressSelect(Block block, UserProfileLoader userProfileLoader) {
+      print('== OperationControl.startLongPressSelect: ${block.blockIndex}');
+      isLongPressSelecting = true;
+      longPressStartBlock = block;
+      longPressCurrentBlock = block;
+
+      // 清空之前的选中状态
+      for (var b in selectedBlocks) {
+        b.unselectBlock();
+      }
+      selectedBlocks.clear();
+      selectedBlockEvent = '';
+
+      // 更新预览
+      _updateLongPressPreview(userProfileLoader);
+      notifyListeners();
+    }
+
+    /// 更新长按拖动选择过程中的当前块
+    void updateLongPressSelect(Block block, UserProfileLoader userProfileLoader) {
+      if (!isLongPressSelecting) return;
+
+      longPressCurrentBlock = block;
+      _updateLongPressPreview(userProfileLoader);
+      notifyListeners();
+    }
+
+    /// 完成长按拖动选择
+    void endLongPressSelect(UserProfileLoader userProfileLoader) {
+      if (!isLongPressSelecting) return;
+
+      print('== OperationControl.endLongPressSelect: preview ${longPressPreviewBlocks.length} blocks');
+
+      // 将预览块转为正式选中
+      for (var b in longPressPreviewBlocks) {
+        b.selectBlock();
+        selectedBlocks.add(b);
+      }
+
+      // 更新选中事件描述
+      _updateSelectedBlockEvent();
+
+      // 重置长按状态
+      isLongPressSelecting = false;
+      longPressStartBlock = null;
+      longPressCurrentBlock = null;
+      longPressPreviewBlocks.clear();
+
+      notifyListeners();
+    }
+
+    /// 取消长按拖动选择
+    void cancelLongPressSelect() {
+      if (!isLongPressSelecting) return;
+
+      // 重置预览块颜色
+      for (var b in longPressPreviewBlocks) {
+        if (!selectedBlocks.contains(b)) {
+          b.unselectBlock();
+        }
+      }
+
+      isLongPressSelecting = false;
+      longPressStartBlock = null;
+      longPressCurrentBlock = null;
+      longPressPreviewBlocks.clear();
+
+      notifyListeners();
+    }
+
+    /// 更新长按拖动预览块
+    void _updateLongPressPreview(UserProfileLoader userProfileLoader) {
+      // 1. 重置之前的预览块颜色
+      for (var b in longPressPreviewBlocks) {
+        if (!selectedBlocks.contains(b)) {
+          b.unselectBlock();
+        }
+      }
+      longPressPreviewBlocks.clear();
+
+      // 2. 如果没有起点块，不做处理
+      if (longPressStartBlock == null || longPressCurrentBlock == null) return;
+
+      // 3. 获取起点到当前块之间的所有块
+      longPressPreviewBlocks = userProfileLoader.getBlocksByIndexRange(
+        longPressStartBlock!.blockIndex,
+        longPressCurrentBlock!.blockIndex,
+      );
+
+      // 4. 设置预览颜色（半透明选中色）
+      for (var b in longPressPreviewBlocks) {
+        b.selectBlock();
+      }
+    }
+
+    /// 更新选中块的事件描述
+    void _updateSelectedBlockEvent() {
+      final List<String> orderedEvents = [];
+      String lastEvent = '';
+      for (final b in selectedBlocks) {
+        if (b.eventType.isNotEmpty && b.eventType != lastEvent) {
+          orderedEvents.add(b.eventType);
+          lastEvent = b.eventType;
+        }
+      }
+      selectedBlockEvent = orderedEvents.join(' · ');
+    }
+
+    // ─────────────────────────────────────────────
+    // 点击选择（原有逻辑）
+    // ─────────────────────────────────────────────
+
     void selectBlocks(Block block, UserProfileLoader userProfileLoader){
+        // 长按选择模式下，点击不处理（由长按结束/取消处理）
+        if (isLongPressSelecting) {
+          print("== selectBlocks: ignored during long press select");
+          return;
+        }
+
         print("== selectedBlocks start: ${List<List<int>>.generate(selectedBlocks.length, (i) => selectedBlocks[i].blockIndex)}");
         // 选择block，如果已经有两个block被选中了，那么就清空，重新选
         switch (selectedBlocks.length) {
@@ -490,17 +644,7 @@ class OperationControl extends ChangeNotifier {
                 }
         } 
         
-        // 按时间顺序收集非空 eventType，合并相邻相同项后拼接显示
-        // 这样即使选中了多种不同类型的色块，也能按顺序看到事件名称序列
-        final List<String> orderedEvents = [];
-        String lastEvent = '';
-        for (final b in selectedBlocks) {
-            if (b.eventType.isNotEmpty && b.eventType != lastEvent) {
-                orderedEvents.add(b.eventType);
-                lastEvent = b.eventType;
-            }
-        }
-        selectedBlockEvent = orderedEvents.join(' · ');
+        _updateSelectedBlockEvent();
         notifyListeners();
 
         // 给selectedBlocks按时间排个序

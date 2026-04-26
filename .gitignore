@@ -15,8 +15,7 @@
 .iml
 .idea/
 .vscode/
-.workbuddy/
-.buildlog/
+# IntelliJ related
 .history
 .svn/
 migrate_working_dir/

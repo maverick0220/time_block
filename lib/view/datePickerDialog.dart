@@ -44,6 +44,14 @@ class _DatePickerDialogState extends State<DatePickerDialog> {
 
         _initCalendarRange();
         _loadDayStatuses();
+
+        // 等首帧渲染完成后滚动到目标日期（确保 ScrollController 已 attach）
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+            // 再等一帧，保证 ListView 内容已经完全布局
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+                _scrollToDate(_focusDate);
+            });
+        });
     }
 
     DateTime _stripTime(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
@@ -85,13 +93,12 @@ class _DatePickerDialogState extends State<DatePickerDialog> {
                 setState(() {
                     _dayStatus.addAll(statuses);
                 });
-                // 滚动到 focusDate 对应的位置
-                WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToDate(_focusDate));
             }
         } catch (_) {}
     }
 
     void _scrollToDate(DateTime target) {
+        if (!_scrollController.hasClients) return;
         // 计算 target 在第几行（周）
         int totalDays = target.difference(_calStart).inDays;
         int row = totalDays ~/ 7;

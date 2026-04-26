@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
 import 'package:hive/hive.dart';
 
 /// 管理数据同步相关的持久化配置
@@ -124,6 +126,41 @@ class SyncConfig {
     if (startDate.compareTo(today) > 0) startDate = today;
 
     return [startDate, today];
+  }
+
+  // ─────────────────────────────────────────────
+  // 设备唯一标识（clientId）
+  // ─────────────────────────────────────────────
+
+  static const String _clientIdKey = 'clientId';
+
+  /// 获取设备唯一标识。
+  /// 首次调用时生成一个 "{平台}-{随机8位hex}" 格式的 ID 并持久化，后续复用。
+  static Future<String> getClientId() async {
+    final box = await _ensureBox();
+    final stored = box.get(_clientIdKey, defaultValue: '') ?? '';
+    if (stored.isNotEmpty) return stored;
+
+    // 生成新 ID
+    final platform = _platformCode();
+    final rand = Random.secure();
+    final hex = List.generate(8, (_) => rand.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+    final newId = '$platform-$hex';
+    await box.put(_clientIdKey, newId);
+    print('== SyncConfig.getClientId: generated new clientId = $newId');
+    return newId;
+  }
+
+  /// 返回当前平台的简短代码（用于 clientId 前缀，便于日志识别设备类型）
+  static String _platformCode() {
+    try {
+      if (Platform.isMacOS)   return 'mac';
+      if (Platform.isIOS)     return 'ios';
+      if (Platform.isAndroid) return 'android';
+      if (Platform.isWindows) return 'win';
+      if (Platform.isLinux)   return 'linux';
+    } catch (_) {}
+    return 'unknown';
   }
 
   // ─────────────────────────────────────────────

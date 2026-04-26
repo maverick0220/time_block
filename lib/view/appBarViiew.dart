@@ -32,7 +32,7 @@ class _AppBarViewState extends State<AppBarView> {
         super.dispose();
     }
 
-    /// 触发完整同步（上传增量 + 接收补丁）
+    /// 触发完整同步（使用新的多步握手协议）
     Future<void> _doSync(BuildContext context) async {
         // 检查服务端地址是否已配置
         final serverUrl = await SyncConfig.getServerUrl();
@@ -43,7 +43,21 @@ class _AppBarViewState extends State<AppBarView> {
 
         setState(() => _isSyncing = true);
 
-        final result = await DataSync().runFullSync();
+        // 判断是否应该使用多步同步
+        // 首次同步或本地无数据时，使用多步同步拉取全部历史
+        final dataSync = DataSync();
+        final shouldUseMultiStep = await dataSync.shouldUseMultiStepSync();
+
+        SyncResult result;
+        if (shouldUseMultiStep) {
+          // 首次同步：使用多步协议，明确请求拉取全部历史数据
+          print('== AppBarView._doSync: using multi-step sync (first time or no local data)');
+          result = await dataSync.runMultiStepSync(wantFullData: true);
+        } else {
+          // 增量同步：使用多步协议
+          print('== AppBarView._doSync: using multi-step sync (incremental)');
+          result = await dataSync.runMultiStepSync(wantFullData: false);
+        }
 
         if (!mounted) return;
         setState(() => _isSyncing = false);
@@ -55,6 +69,11 @@ class _AppBarViewState extends State<AppBarView> {
             // applyPatchedDates 会从 Hive 重读数据并 notifyListeners，
             // 无论补丁日期是否在当前 renderDates 窗口内都能正确更新
             widget.userProfileLoader.applyPatchedDates(result.patchedDates);
+        }
+
+        // 如果 eventInfo 有更新，刷新内存中的 eventInfos 列表
+        if (result.success && result.eventInfoUpdated) {
+            await widget.userProfileLoader.applyServerEventInfo();
         }
     }
 

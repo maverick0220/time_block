@@ -71,10 +71,29 @@ class _EditPageState extends State<EditPage> {
         });
     }
 
-    /// 触发完整同步
-    Future<void> _doUpload() async {
+    /// 触发完整同步（使用多步握手协议）
+    Future<void> _doUpload(UserProfileLoader userProfileLoader) async {
         setState(() { _isSyncing = true; _syncStatusMessage = '正在同步数据…'; });
-        final result = await DataSync().runFullSync();
+
+        final dataSync = DataSync();
+        final shouldUseMultiStep = await dataSync.shouldUseMultiStepSync();
+
+        SyncResult result;
+        if (shouldUseMultiStep) {
+          result = await dataSync.runMultiStepSync(wantFullData: true);
+        } else {
+          result = await dataSync.runMultiStepSync(wantFullData: false);
+        }
+
+        // 同步后刷新补丁数据
+        if (result.success && result.patchedDays > 0) {
+            userProfileLoader.applyPatchedDates(result.patchedDates);
+        }
+        // 同步后刷新 eventInfo 配置
+        if (result.success && result.eventInfoUpdated) {
+            await userProfileLoader.applyServerEventInfo();
+        }
+
         setState(() {
             _isSyncing = false;
             _syncStatusMessage = result.message;
@@ -151,7 +170,7 @@ class _EditPageState extends State<EditPage> {
                             const SizedBox(height: 16),
 
                             // -------- 数据同步配置卡片 --------
-                            _buildSyncConfigCard(isDark),
+                            _buildSyncConfigCard(isDark, userProfileLoader),
 
                             const SizedBox(height: 24),
                         ]
@@ -163,7 +182,7 @@ class _EditPageState extends State<EditPage> {
         );
     }
 
-    Widget _buildSyncConfigCard(bool isDark) {
+    Widget _buildSyncConfigCard(bool isDark, UserProfileLoader userProfileLoader) {
         final cardColor = isDark
             ? const Color.fromARGB(255, 35, 35, 40)
             : const Color.fromARGB(255, 245, 245, 250);
@@ -299,7 +318,7 @@ class _EditPageState extends State<EditPage> {
                                             backgroundColor: const Color.fromARGB(255, 60, 130, 220),
                                             foregroundColor: Colors.white,
                                         ),
-                                        onPressed: _isSyncing ? null : _doUpload,
+                                        onPressed: _isSyncing ? null : () => _doUpload(userProfileLoader),
                                     ),
                                 ),
                             ],

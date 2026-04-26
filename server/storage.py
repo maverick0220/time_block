@@ -162,6 +162,7 @@ def _rows_to_event_info_list(rows) -> list[dict]:
                 'b': row['color_b'],
             },
             'belongingTo': row['belonging_to'],
+            'sortOrder': row['sort_order'],
         })
     return result
 
@@ -178,9 +179,13 @@ def get_all_event_info() -> list[dict]:
 def upsert_event_info_list(client_list: list[dict]) -> list[str]:
     """
     以 name 为唯一键，将客户端上传的 eventInfo 列表 upsert 到数据库。
-    - 客户端有 → 覆盖（包括颜色）
+    - 客户端有 → 覆盖（包括颜色、sortOrder）
     - 服务端独有 → 保留
     返回有颜色变化的条目名称列表（用于日志）。
+
+    排序优先级：
+    1. 客户端上传字段中的 sortOrder（若存在）
+    2. 回退到该条目在列表中的枚举顺序（0, 1, 2, ...）
     """
     color_changed: list[str] = []
 
@@ -194,6 +199,10 @@ def upsert_event_info_list(client_list: list[dict]) -> list[str]:
             g = color.get('g', 128)
             b = color.get('b', 128)
             belonging = ci.get('belongingTo', '')
+            # 优先使用客户端上传的 sortOrder，没有则回退到枚举索引
+            sort_order = ci.get('sortOrder', order_idx)
+            if not isinstance(sort_order, int):
+                sort_order = order_idx
 
             # 检查颜色是否有变化
             existing = conn.execute(
@@ -217,7 +226,7 @@ def upsert_event_info_list(client_list: list[dict]) -> list[str]:
                     color_b      = excluded.color_b,
                     belonging_to = excluded.belonging_to,
                     sort_order   = excluded.sort_order
-            """, (name, r, g, b, belonging, order_idx))
+            """, (name, r, g, b, belonging, sort_order))
 
     return color_changed
 
